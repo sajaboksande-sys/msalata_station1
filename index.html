@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محطة المسلاتة الذكية - الإصدار الاحترافي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { 
+            --primary: #6366f1; --driver-clr: #10b981; --admin-clr: #f43f5e; 
+            --bg: #0f172a; --card: #1e293b; --accent: #22d3ee; --warning: #f59e0b; 
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
+        body { background: var(--bg); color: white; padding-bottom: 80px; overflow-x: hidden; }
+        
+        header { background: #1e293b; padding: 15px; text-align: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 1000; }
+        
+        #ads-container { margin: 10px 15px; background: linear-gradient(90deg, #4f46e5, #7c3aed); border-radius: 12px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        #ad-text { font-size: 0.9rem; font-weight: bold; transition: opacity 0.5s; }
+
+        .page { display: none; padding: 15px; animation: fadeIn 0.4s ease-out; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .card { background: var(--card); padding: 20px; border-radius: 15px; margin-bottom: 15px; border: 1px solid #334155; }
+        
+        input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 1rem; }
+        
+        .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-weight: 900; cursor: pointer; color: white; text-align: center; display: block; text-decoration: none; transition: 0.3s; }
+        .btn:active { transform: scale(0.98); }
+
+        /* تنسيق التبويب (يدوي/تلقائي) */
+        .tab-buttons { display: flex; gap: 10px; margin: 10px 0; }
+        .tab-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--primary); background: none; color: white; cursor: pointer; font-weight: bold; font-size: 0.8rem; }
+        .tab-btn.active { background: var(--primary); }
+
+        #map { height: 250px; width: 100%; border-radius: 12px; margin-top: 10px; border: 2px solid var(--primary); display: none; }
+
+        .star { font-size: 2.5rem; cursor: pointer; color: #475569; }
+        .star.active { color: var(--warning); }
+
+        nav { position: fixed; bottom: 0; width: 100%; background: #1e293b; display: flex; justify-content: space-around; padding: 12px; border-top: 1px solid #334155; z-index: 1000; }
+        nav button { background: none; border: none; color: #94a3b8; font-weight: bold; cursor: pointer; }
+        nav button.active { color: var(--accent); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: var(--admin-clr); padding: 12px; font-size: 0.8rem; }
+        td { padding: 10px; border-bottom: 1px solid #334155; text-align: center; font-size: 0.8rem; }
+    </style>
+    <link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/717/717498.png">
+
+<script>
+  // تسجيل عامل الخدمة (Service Worker)
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('PWA Ready!'))
+        .catch(err => console.log('PWA Failed', err));
+    });
+  }
+</script>
+</head>
+<body>
+
+<header><h2>محطة المسلاتة الذكية 📍</h2></header>
+
+<div id="ads-container"><div id="ad-text">🚀 خدمة المسلاتة: سرعة، أمان، واحترافية</div></div>
+
+<div id="customer-page" class="page active">
+    <div class="card" id="order-form">
+        <h3>طلب رحلة جديد 🚖</h3>
+        <input type="text" id="c-name" placeholder="اسم الراكب">
+        <input type="tel" id="c-phone" placeholder="رقم الهاتف">
+        
+        <p style="margin-top: 15px; font-size: 0.9rem; color: var(--accent);">📍 نقطة الانطلاق:</p>
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="setLocMode('manual', this)">إدخال يدوي</button>
+            <button class="tab-btn" onclick="setLocMode('auto', this)">تحديد تلقائي (GPS)</button>
+        </div>
+        <input type="text" id="c-from-manual" placeholder="اكتب مكانك الحالي (مثلاً: بجانب جامع البركة)">
+        <div id="map"></div>
+        
+        <p style="margin-top: 15px; font-size: 0.9rem; color: var(--accent);">🎯 وجهة الوصول:</p>
+        <input type="text" id="c-to" placeholder="إلى أين ستذهب؟">
+        
+        <button class="btn" style="background: var(--primary); margin-top: 20px;" onclick="sendOrder()">تأكيد وطلب الرحلة</button>
+    </div>
+
+    <div id="status-card" class="card" style="display: none;">
+        <div id="status-content">
+            <h4 style="text-align: center; color: var(--accent);">📡 جاري البحث عن أقرب سائق...</h4>
+        </div>
+        <div id="rating-section" style="display: none; text-align: center; margin-top: 20px; border-top: 1px dashed #444; padding-top: 15px;">
+            <p>قيم تجربتك مع السائق:</p>
+            <div style="direction: ltr; margin: 10px 0;">
+                <span class="star" onclick="setRating(1)">★</span>
+                <span class="star" onclick="setRating(2)">★</span>
+                <span class="star" onclick="setRating(3)">★</span>
+                <span class="star" onclick="setRating(4)">★</span>
+                <span class="star" onclick="setRating(5)">★</span>
+            </div>
+            <button class="btn" style="background: var(--driver-clr);" onclick="submitRating()">إرسال التقييم</button>
+        </div>
+    </div>
+</div>
+
+<div id="driver-page" class="page">
+    <div id="driver-auth" class="card">
+        <h3>دخول السائقين</h3>
+        <input type="password" id="d-pass" placeholder="أدخل الرمز السري">
+        <button class="btn" style="background: var(--driver-clr);" onclick="driverLogin()">دخول للمنظومة</button>
+    </div>
+    <div id="driver-panel" style="display: none;">
+        <div class="card" style="border-right: 5px solid var(--driver-clr);">
+            مرحباً: <span id="dr-name" style="font-weight: bold;"></span> ✅
+        </div>
+        <h4>الطلبات الحالية:</h4>
+        <div id="driver-orders-list"></div>
+    </div>
+</div>
+
+<div id="admin-page" class="page">
+    <div class="card" style="text-align: center;">إجمالي الرحلات المسجلة: <span id="stat-trips" style="font-weight: 900;">0</span></div>
+    <div class="card" style="padding: 0; overflow-x: auto;">
+        <table>
+            <thead><tr><th>الراكب</th><th>السائق</th><th>المسار</th><th>التقييم</th></tr></thead>
+            <tbody id="admin-table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<nav>
+    <button class="active" onclick="changePage('customer', this)">الراكب</button>
+    <button onclick="changePage('driver', this)">السائق</button>
+    <button onclick="checkAdmin(this)">الإدارة</button>
+</nav>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    let map, marker, locationMode = 'manual', myOrderName = "", curDr = null, userRating = 0;
+    let selectedLat = 32.5786, selectedLng = 14.2253;
+
+    // الإعلانات
+    const ads = ["🚀 خدمة المسلاتة: الأسرع والأضمن", "📱 قيم رحلتك وساعدنا نطور خدماتنا", "🛡️ رحلتك آمنة مع سائقينا المعتمدين"];
+    let adI = 0; setInterval(() => { adI = (adI+1)%ads.length; document.getElementById('ad-text').innerText = ads[adI]; }, 4000);
+
+    function setLocMode(mode, btn) {
+        locationMode = mode;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if(mode === 'auto') {
+            document.getElementById('c-from-manual').style.display = 'none';
+            document.getElementById('map').style.display = 'block';
+            if(!map) initMap();
+            detectMyPosition();
+        } else {
+            document.getElementById('c-from-manual').style.display = 'block';
+            document.getElementById('map').style.display = 'none';
+        }
+    }
+
+    function initMap() {
+        map = L.map('map').setView([selectedLat, selectedLng], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        marker = L.marker([selectedLat, selectedLng], {draggable: true}).addTo(map);
+        marker.on('dragend', () => { const p = marker.getLatLng(); selectedLat = p.lat; selectedLng = p.lng; });
+    }
+
+    function detectMyPosition() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(p => {
+                selectedLat = p.coords.latitude; selectedLng = p.coords.longitude;
+                map.setView([selectedLat, selectedLng], 16);
+                marker.setLatLng([selectedLat, selectedLng]);
+            });
+        }
+    }
+
+    function sendOrder() {
+        myOrderName = document.getElementById('c-name').value;
+        const phone = document.getElementById('c-phone').value;
+        const to = document.getElementById('c-to').value;
+        let fromText = locationMode === 'manual' ? document.getElementById('c-from-manual').value : "موقع محدد عبر الخريطة 📍";
+
+        if(!myOrderName || !to) return alert("الرجاء تعبئة البيانات الأساسية");
+
+        socket.emit('client_new_order', {
+            name: myOrderName, phone, to, from: fromText,
+            lat: locationMode === 'auto' ? selectedLat : null,
+            lng: locationMode === 'auto' ? selectedLng : null
+        });
+        document.getElementById('order-form').style.display = 'none';
+        document.getElementById('status-card').style.display = 'block';
+    }
+
+    socket.on('order_confirmed', (data) => {
+        if(data.passengerName === myOrderName) {
+            document.getElementById('status-content').innerHTML = `
+                <div style="text-align:center; background:rgba(16,185,129,0.1); padding:15px; border-radius:12px; border:1px solid var(--driver-clr);">
+                    <h3 style="color:var(--driver-clr)">✅ تم قبول رحلتك!</h3>
+                    <p style="margin:10px 0;">السائق: <b>${data.driverName}</b></p>
+                    <p>السيارة: <b>${data.car} (${data.color})</b></p>
+                    <small>السائق في طريقه إليك الآن</small>
+                </div>`;
+            setTimeout(() => document.getElementById('rating-section').style.display = 'block', 8000);
+        }
+    });
+
+    function setRating(n) { userRating = n; document.querySelectorAll('.star').forEach((s,i) => s.classList.toggle('active', i < n)); }
+    function submitRating() { socket.emit('submit_rating', { passengerName: myOrderName, stars: userRating }); alert("شكراً لتقييمك!"); location.reload(); }
+
+    function driverLogin() { socket.emit('driver_login_attempt', { pass: document.getElementById('d-pass').value }); }
+    socket.on('login_success', (d) => { curDr = d; document.getElementById('dr-name').innerText = d.name; document.getElementById('driver-auth').style.display = 'none'; document.getElementById('driver-panel').style.display = 'block'; });
+    socket.on('login_error', (m) => alert(m));
+
+    socket.on('notify_driver', (o) => {
+        if(!curDr) return;
+        const mapLink = o.lat ? `<a href="https://www.google.com/maps?q=${o.lat},${o.lng}" target="_blank" class="btn" style="background:var(--primary); margin-bottom:5px;">فتح الموقع على الخريطة 🗺️</a>` : '';
+        document.getElementById('driver-orders-list').insertAdjacentHTML('afterbegin', `
+            <div class="card" id="order-${o.name}" style="border-right: 5px solid var(--warning);">
+                <h4>الراكب: ${o.name}</h4>
+                <p>📍 من: ${o.from}</p><p>🎯 إلى: ${o.to}</p>
+                ${mapLink}
+                <a href="tel:${o.phone}" class="btn" style="background:#444; margin-bottom:5px;">اتصال بالراكب 📞</a>
+                <button class="btn" style="background:var(--driver-clr)" onclick="acceptTrip('${o.name}')">قبول الطلب ✅</button>
+            </div>`);
+    });
+
+    function acceptTrip(p) { socket.emit('driver_accept_order', { passengerName: p, driverName: curDr.name }); }
+
+    function changePage(p, b) {
+        document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+        document.getElementById(p+'-page').classList.add('active');
+        document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+        if(b) b.classList.add('active');
+        if(p === 'admin') loadAdminData();
+    }
+
+    function checkAdmin(btn) { if(prompt("الرمز السري للإدارة:") === "2026") changePage('admin', btn); }
+
+    async function loadAdminData() {
+        const res = await fetch('/api/admin/trips'); const data = await res.json();
+        document.getElementById('stat-trips').innerText = data.length;
+        document.getElementById('admin-table-body').innerHTML = data.map(t => `
+            <tr><td>${t.passenger_name}</td><td>${t.driver_name || '-'}</td><td>${t.destination}</td><td style="color:var(--warning)">${'★'.repeat(t.rating)}</td></tr>
+        `).join('');
+    }
+</script>
+</body>
+</html>
