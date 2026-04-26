@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>محطة المسلاتة الذكية - الإصدار الاحترافي</title>
+    <title>محطة المسلاتة الذكية</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -30,7 +30,6 @@
         .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-weight: 900; cursor: pointer; color: white; text-align: center; display: block; text-decoration: none; transition: 0.3s; }
         .btn:active { transform: scale(0.98); }
 
-        /* تنسيق التبويب (يدوي/تلقائي) */
         .tab-buttons { display: flex; gap: 10px; margin: 10px 0; }
         .tab-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--primary); background: none; color: white; cursor: pointer; font-weight: bold; font-size: 0.8rem; }
         .tab-btn.active { background: var(--primary); }
@@ -48,21 +47,6 @@
         th { background: var(--admin-clr); padding: 12px; font-size: 0.8rem; }
         td { padding: 10px; border-bottom: 1px solid #334155; text-align: center; font-size: 0.8rem; }
     </style>
-    <link rel="manifest" href="/manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/717/717498.png">
-
-<script>
-  // تسجيل عامل الخدمة (Service Worker)
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('PWA Ready!'))
-        .catch(err => console.log('PWA Failed', err));
-    });
-  }
-</script>
 </head>
 <body>
 
@@ -117,6 +101,7 @@
     <div id="driver-panel" style="display: none;">
         <div class="card" style="border-right: 5px solid var(--driver-clr);">
             مرحباً: <span id="dr-name" style="font-weight: bold;"></span> ✅
+            <button onclick="logoutDriver()" style="background:none; border:none; color:var(--admin-clr); float:left; font-size:0.8rem; cursor:pointer;">خروج</button>
         </div>
         <h4>الطلبات الحالية:</h4>
         <div id="driver-orders-list"></div>
@@ -142,11 +127,19 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-    const socket = io();
+    const socket = io(); // سيتصل تلقائياً برابط الموقع أونلاين
     let map, marker, locationMode = 'manual', myOrderName = "", curDr = null, userRating = 0;
     let selectedLat = 32.5786, selectedLng = 14.2253;
 
-    // الإعلانات
+    // --- تحقق من وجود جلسة دخول سابقة للسائق ---
+    window.onload = () => {
+        const savedDriver = localStorage.getItem('msalata_driver');
+        if (savedDriver) {
+            curDr = JSON.parse(savedDriver);
+            showDriverPanel(curDr);
+        }
+    };
+
     const ads = ["🚀 خدمة المسلاتة: الأسرع والأضمن", "📱 قيم رحلتك وساعدنا نطور خدماتنا", "🛡️ رحلتك آمنة مع سائقينا المعتمدين"];
     let adI = 0; setInterval(() => { adI = (adI+1)%ads.length; document.getElementById('ad-text').innerText = ads[adI]; }, 4000);
 
@@ -178,7 +171,7 @@
                 selectedLat = p.coords.latitude; selectedLng = p.coords.longitude;
                 map.setView([selectedLat, selectedLng], 16);
                 marker.setLatLng([selectedLat, selectedLng]);
-            });
+            }, () => alert("يرجى تفعيل الـ GPS"));
         }
     }
 
@@ -199,6 +192,42 @@
         document.getElementById('status-card').style.display = 'block';
     }
 
+    // --- تعديل تسجيل دخول السائق ليعمل عبر الـ API ---
+    async function driverLogin() {
+        const pass = document.getElementById('d-pass').value;
+        if(!pass) return alert("يرجى إدخال الرمز");
+
+        try {
+            const response = await fetch('/api/driver/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ pass: pass })
+            });
+            const data = await response.json();
+
+            if(data.success) {
+                curDr = data.driver;
+                localStorage.setItem('msalata_driver', JSON.stringify(curDr)); // تذكر السائق
+                showDriverPanel(curDr);
+            } else {
+                alert(data.message);
+            }
+        } catch (e) {
+            alert("فشل الاتصال بالسيرفر، تأكد من الإنترنت");
+        }
+    }
+
+    function showDriverPanel(d) {
+        document.getElementById('dr-name').innerText = d.name;
+        document.getElementById('driver-auth').style.display = 'none';
+        document.getElementById('driver-panel').style.display = 'block';
+    }
+
+    function logoutDriver() {
+        localStorage.removeItem('msalata_driver');
+        location.reload();
+    }
+
     socket.on('order_confirmed', (data) => {
         if(data.passengerName === myOrderName) {
             document.getElementById('status-content').innerHTML = `
@@ -208,16 +237,12 @@
                     <p>السيارة: <b>${data.car} (${data.color})</b></p>
                     <small>السائق في طريقه إليك الآن</small>
                 </div>`;
-            setTimeout(() => document.getElementById('rating-section').style.display = 'block', 8000);
+            setTimeout(() => document.getElementById('rating-section').style.display = 'block', 5000);
         }
     });
 
     function setRating(n) { userRating = n; document.querySelectorAll('.star').forEach((s,i) => s.classList.toggle('active', i < n)); }
     function submitRating() { socket.emit('submit_rating', { passengerName: myOrderName, stars: userRating }); alert("شكراً لتقييمك!"); location.reload(); }
-
-    function driverLogin() { socket.emit('driver_login_attempt', { pass: document.getElementById('d-pass').value }); }
-    socket.on('login_success', (d) => { curDr = d; document.getElementById('dr-name').innerText = d.name; document.getElementById('driver-auth').style.display = 'none'; document.getElementById('driver-panel').style.display = 'block'; });
-    socket.on('login_error', (m) => alert(m));
 
     socket.on('notify_driver', (o) => {
         if(!curDr) return;
