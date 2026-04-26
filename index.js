@@ -3,11 +3,19 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mysql = require('mysql2/promise');
 const path = require('path');
+const cors = require('cors'); // أضيفي هذه المكتبة للسماح بالطلبات الخارجية
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: { origin: "*" } // للسماح بالاتصال من أي مكان بعد الرفع
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
 
 const db = mysql.createPool({
     uri: "mysql://avnadmin:AVNS_Ciqp9f7t1WJ9xQBIfw-@mysql-28d492e5-sajaboksande-bbbb.a.aivencloud.com:21435/defaultdb",
@@ -15,8 +23,6 @@ const db = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10
 });
-
-app.use(express.static(path.join(__dirname)));
 
 const driversList = [
     { id: 1, name: "أحمد", pass: "1001", car: "تويوتا كورولا", color: "أبيض" },
@@ -41,6 +47,18 @@ const driversList = [
     { id: 20, name: "فتحي", pass: "1020", car: "هيونداي أكسنت", color: "أسود" }
 ];
 
+// --- تعديل مسار تسجيل الدخول (API) ---
+app.post('/api/driver/login', (req, res) => {
+    const { pass } = req.body;
+    const driver = driversList.find(d => d.pass === String(pass));
+
+    if (driver) {
+        res.json({ success: true, driver: driver });
+    } else {
+        res.status(401).json({ success: false, message: "الرمز الذي أدخلته غير صحيح" });
+    }
+});
+
 app.get('/api/admin/trips', async (req, res) => {
     try {
         const [rows] = await db.query("SELECT * FROM trips ORDER BY id DESC");
@@ -48,9 +66,12 @@ app.get('/api/admin/trips', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Socket logic
 io.on('connection', (socket) => {
+    
+    // دعم الطريقة القديمة عبر السوكيت لضمان عدم توقف الواجهة لديكِ
     socket.on('driver_login_attempt', (data) => {
-        const driver = driversList.find(d => d.pass === data.pass);
+        const driver = driversList.find(d => d.pass === String(data.pass));
         if (driver) socket.emit('login_success', driver);
         else socket.emit('login_error', "الرمز خاطئ");
     });
@@ -58,7 +79,6 @@ io.on('connection', (socket) => {
     socket.on('client_new_order', async (orderData) => {
         io.emit('notify_driver', orderData);
         try {
-            // تخزين الإحداثيات أيضاً في قاعدة البيانات
             const sql = "INSERT INTO trips (passenger_name, destination, pickup_point, status, phone) VALUES (?, ?, ?, ?, ?)";
             await db.query(sql, [orderData.name, orderData.to, `Lat: ${orderData.lat}, Lng: ${orderData.lng}`, 'في الانتظار', orderData.phone]);
         } catch (err) { console.error(err.message); }
@@ -82,8 +102,9 @@ io.on('connection', (socket) => {
 
 async function startApp() {
     try {
+        const port = process.env.PORT || 5000; // مهم جداً لمنصة Render
         await db.query("SELECT 1");
-        server.listen(5000, () => console.log(`🌍 المنظومة تعمل بالخرائط على المنفذ 5000`));
-    } catch (err) { console.error(err.message); }
+        server.listen(port, () => console.log(`🌍 المنظومة تعمل على المنفذ ${port}`));
+    } catch (err) { console.error("Database connection failed:", err.message); }
 }
 startApp();
